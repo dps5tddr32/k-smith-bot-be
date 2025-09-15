@@ -80,7 +80,7 @@ app.post("/chat", async (req, res) => {
     if (usedIdsArray.length === 0) {
       query = `
         SELECT id, content
-        FROM book_chunks2
+        FROM book_chunks3
         ORDER BY embedding <=> $1::vector
         LIMIT 1
       `;
@@ -88,7 +88,7 @@ app.post("/chat", async (req, res) => {
     } else {
       query = `
         SELECT id, content
-        FROM book_chunks2
+        FROM book_chunks3
         WHERE id != ALL($2::bigint[])
         ORDER BY embedding <=> $1::vector
         LIMIT 1
