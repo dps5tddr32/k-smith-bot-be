@@ -2,7 +2,7 @@ import express from "express";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import { OpenAI } from "openai";
-import pkg from "pg";
+import postgres from "postgres";
 import cors from "cors";
 
 // allow only your frontend domain
@@ -11,7 +11,8 @@ const allowedOrigins = [
 ];
 
 dotenv.config();
-const { Pool } = pkg;
+
+const pool = postgres(process.env.SUPABASE_DB_URL)
 
 const app = express();
 app.use(bodyParser.json());
@@ -28,14 +29,6 @@ app.use(cors({
 }));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// Supabase Postgres connection
-const pool = new Pool({
-  connectionString: process.env.SUPABASE_DB_URL,
-  ssl: {
-    rejectUnauthorized: false, // required by Supabase
-  },
-});
 
 // Global set of IDs already returned
 // const usedChunkIds = new Set();
@@ -60,7 +53,7 @@ app.post("/chat", async (req, res) => {
     // // 2. Query Postgres with pgvector
     // const { rows } = await pool.query(
     //   `select id, content, 1 - (embedding <=> $1::vector) as similarity
-    //    from book_chunks2
+    //    from book_chunks3
     //    order by embedding <=> $1::vector
     //    limit 5;`,
     //   [queryEmbedding]
@@ -68,35 +61,38 @@ app.post("/chat", async (req, res) => {
 
 
     const queryEmbedding = emb.data[0].embedding;
-    const vectorStr = `[${queryEmbedding.join(",")}]`; // Postgres vector literal
+    // const vectorStr = `[${queryEmbedding.join(",")}]`; // Postgres vector literal
 
     // 2. Build query, exclude already used IDs
     const usedIdsArray = Array.from(usedChunkIds).map(Number);
 
     console.log({ usedIdsArray })
 
-    let query, params;
+    let rows;
 
     if (usedIdsArray.length === 0) {
-      query = `
+      const vectorStr = `[${queryEmbedding.join(",")}]`;
+
+      rows = await pool`
         SELECT id, content
         FROM book_chunks3
-        ORDER BY embedding <=> $1::vector
+        ORDER BY embedding <=> ${vectorStr}::vector
         LIMIT 1
       `;
-      params = [vectorStr];
+
+      // params = [vectorStr];
     } else {
-      query = `
+      rows = await pool`
         SELECT id, content
         FROM book_chunks3
-        WHERE id != ALL($2::bigint[])
-        ORDER BY embedding <=> $1::vector
+        WHERE id != ALL(${usedIdsArray}::bigint[])
+        ORDER BY embedding <=> ${queryEmbedding}::vector
         LIMIT 1
       `;
-      params = [vectorStr, usedIdsArray];
+      // params = [vectorStr, usedIdsArray];
     }
 
-    const { rows } = await pool.query(query, params);
+    // const { rows } = await pool.query(query, params);
 
     if (rows.length === 0) {
       return res.json({ reply: "No new relevant information left in the book." });
