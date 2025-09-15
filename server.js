@@ -30,14 +30,10 @@ app.use(cors({
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Global set of IDs already returned
-// const usedChunkIds = new Set();
-const usedChunkIds = [];
-
 // --- RAG endpoint ---
 app.post("/chat", async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, usedChunkIds = [] } = req.body;
 
     // 1. Embed user query
     const emb = await openai.embeddings.create({
@@ -70,7 +66,7 @@ app.post("/chat", async (req, res) => {
 
     let rows;
 
-    if (usedIdsArray.length === 0) {
+    if (usedChunkIds.length === 0) {
       const vectorStr = `[${queryEmbedding.join(",")}]`;
 
       rows = await pool`
@@ -85,7 +81,7 @@ app.post("/chat", async (req, res) => {
       rows = await pool`
         SELECT id, content
         FROM book_chunks3
-        WHERE id != ALL(${usedIdsArray}::bigint[])
+        WHERE id != ALL(${usedChunkIds}::bigint[])
         ORDER BY embedding <=> ${queryEmbedding}::vector
         LIMIT 1
       `;
@@ -95,7 +91,7 @@ app.post("/chat", async (req, res) => {
     // const { rows } = await pool.query(query, params);
 
     if (rows.length === 0) {
-      return res.json({ reply: "No new relevant information left in the book." });
+      return res.json({ reply: "No new relevant information left in the book.", newUsedIds: [] });
     }
 
     // 3. Mark these chunks as used globally
@@ -131,8 +127,6 @@ app.post("/chat", async (req, res) => {
 
 
     // console.log({ gptContent })
-    res.json({ reply: gptContent });
-
 
     // // 4. Ask GPT-4.1
     // const completion = await openai.chat.completions.create({
@@ -147,6 +141,12 @@ app.post("/chat", async (req, res) => {
 
     // const reply = completion.choices[0].message.content;
     // res.json({ reply });
+
+    // Return the IDs used this round so frontend can update its counter
+    const newUsedIds = rows.map(r => r.id);
+
+    res.json({ reply: gptContent, newUsedIds });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
