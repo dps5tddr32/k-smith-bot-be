@@ -3,12 +3,29 @@ import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import { OpenAI } from "openai";
 import pkg from "pg";
+import cors from "cors";
+
+// allow only your frontend domain
+const allowedOrigins = [
+  "https://k-smith-bot.netlify.app" // replace with actual Netlify URL
+];
 
 dotenv.config();
 const { Pool } = pkg;
 
 const app = express();
 app.use(bodyParser.json());
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true
+}));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
