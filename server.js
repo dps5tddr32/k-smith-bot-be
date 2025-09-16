@@ -90,7 +90,17 @@ app.post("/chat", async (req, res) => {
     const newUsedIds = rows.map(r => r.id);
     const context = rows.map(r => r.content).join("\n");
 
-    const gptContent = `Potentially useful information:\n${context}\n\nNew user message:\n${message}`;
+    // const message1 = 'Context';
+    // const message1 = 'Keep this in mind'
+    // const message1 = 'Keep this information in mind'
+    // const message1 = 'Potentially useful information'
+    const message1 = 'Potentially helpful quotes'
+
+    // const message2 = `Question`;
+    // const message2 = `User message`;
+    const message2 = `New user message`;
+
+    const gptContent = `${message1}:\n${context}\n\n${message2}:\n${message}`;
 
     res.json({ reply: gptContent, newUsedIds });
 
