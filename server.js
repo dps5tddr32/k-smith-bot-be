@@ -2,28 +2,26 @@ import express from "express";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import { OpenAI } from "openai";
-import postgres from "postgres";
+import pkg from "pg";
 import cors from "cors";
 
-// allow only your frontend domain
+dotenv.config();
+const { Pool } = pkg;
+
 const allowedOrigins = [
-  "https://k-smith-bot.netlify.app" // replace with actual Netlify URL
+  "https://k-smith-bot.netlify.app"
 ];
 
-dotenv.config();
-
-const pool = postgres(process.env.SUPABASE_DB_URL)
+const pool = new Pool({
+  connectionString: process.env.SUPABASE_DB_URL
+});
 
 const app = express();
 app.use(bodyParser.json());
-
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) callback(null, true);
+    else callback(new Error("Not allowed by CORS"));
   },
   credentials: true
 }));
@@ -56,94 +54,43 @@ app.post("/chat", async (req, res) => {
     // );
 
 
-    const queryEmbedding = emb.data[0].embedding;
-    // const vectorStr = `[${queryEmbedding.join(",")}]`; // Postgres vector literal
+    const queryEmbedding = emb.data[0].embedding; // array of numbers
+    const vectorStr = `[${queryEmbedding.join(",")}]`; // pgvector literal
+    const usedIdsArray = usedChunkIds.map(id => Number(id));
 
-    // 2. Build query, exclude already used IDs
-    const usedIdsArray = Array.from(usedChunkIds).map(Number);
-
-    console.log({ usedIdsArray })
-
-    let rows;
-
-    if (usedChunkIds.length === 0) {
-      const vectorStr = `[${queryEmbedding.join(",")}]`;
-
-      rows = await pool`
+    // 2. Build SQL query
+    let query, params;
+    if (usedIdsArray.length === 0) {
+      query = `
         SELECT id, content
         FROM book_chunks3
-        ORDER BY embedding <=> ${vectorStr}::vector
+        ORDER BY embedding <=> $1::vector
         LIMIT 5
       `;
-
-      // params = [vectorStr];
+      params = [vectorStr];
     } else {
-      rows = await pool`
+      query = `
         SELECT id, content
         FROM book_chunks3
-        WHERE id != ALL(${usedChunkIds}::bigint[])
-        ORDER BY embedding <=> ${queryEmbedding}::vector
+        WHERE id != ALL($2::bigint[])
+        ORDER BY embedding <=> $1::vector
         LIMIT 5
       `;
-      // params = [vectorStr, usedIdsArray];
+      params = [vectorStr, usedIdsArray];
     }
 
-    // const { rows } = await pool.query(query, params);
+    // 3. Execute query
+    const { rows } = await pool.query(query, params);
 
     if (rows.length === 0) {
       return res.json({ reply: "No new relevant information left in the book.", newUsedIds: [] });
     }
 
-    // 3. Mark these chunks as used globally
-    // rows.forEach(r => usedChunkIds.add(r.id));
-    rows.forEach(r => usedChunkIds.push(r.id));
-
-
-    const contextFORLOGGING = rows.map((r) => r.content).join("\n\n");
-
-    console.log({ contextFORLOGGING })
-
-
-
+    // 4. Return the results and update used IDs
+    const newUsedIds = rows.map(r => r.id);
     const context = rows.map(r => r.content).join("\n");
 
-
-
-    // const message1 = 'Context';
-    // const message1 = 'Keep this in mind'
-    // const message1 = 'Keep this information in mind'
-    const message1 = 'Potentially useful information'
-
-    // const message2 = `Question`;
-    // const message2 = `User message`;
-    const message2 = `New user message`;
-
-    const gptContent = `${message1}:\n${context}\n\n${message2}:\n${message}`;
-
-    // console.log({ gptContent })
-
-    // 5. Ask GPT-4.1
-
-
-
-    // console.log({ gptContent })
-
-    // // 4. Ask GPT-4.1
-    // const completion = await openai.chat.completions.create({
-    //   model: "gpt-4.1",
-    //   messages: [
-    //     { role: "system", content: "You are Kaylie Smith, the author of the book Phantasma. You answer questions about the Phantasma book based on the provided Phantasma book snippets. Talk passionately as if the information is coming from your head. Do not mention that you had context given to you." },
-    //     { role: "user", content: gptContent }
-    //   ]
-    // });
-
-    // console.log({ completionChoices: completion.choices })
-
-    // const reply = completion.choices[0].message.content;
-    // res.json({ reply });
-
-    // Return the IDs used this round so frontend can update its counter
-    const newUsedIds = rows.map(r => r.id);
+    const gptContent = `Potentially useful information:\n${context}\n\nNew user message:\n${message}`;
 
     res.json({ reply: gptContent, newUsedIds });
 
