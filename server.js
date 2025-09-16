@@ -73,7 +73,7 @@ app.post("/chat", async (req, res) => {
         SELECT id, content
         FROM book_chunks3
         ORDER BY embedding <=> ${vectorStr}::vector
-        LIMIT 1
+        LIMIT 5
       `;
 
       // params = [vectorStr];
@@ -83,7 +83,7 @@ app.post("/chat", async (req, res) => {
         FROM book_chunks3
         WHERE id != ALL(${usedChunkIds}::bigint[])
         ORDER BY embedding <=> ${queryEmbedding}::vector
-        LIMIT 1
+        LIMIT 5
       `;
       // params = [vectorStr, usedIdsArray];
     }
@@ -99,7 +99,7 @@ app.post("/chat", async (req, res) => {
     rows.forEach(r => usedChunkIds.push(r.id));
 
 
-    const contextFORLOGGING = rows.map((r) => r.content).join("\n\n\n\n\n\n\n\n\n\n\n\n");
+    const contextFORLOGGING = rows.map((r) => r.content).join("\n\n");
 
     console.log({ contextFORLOGGING })
 
